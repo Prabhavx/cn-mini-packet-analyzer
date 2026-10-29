@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+.venv/
+.env
+*.pdf
+*.zip
+demo_report.txt

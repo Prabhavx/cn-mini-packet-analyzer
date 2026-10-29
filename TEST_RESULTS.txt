@@ -1,0 +1,41 @@
+Assignment 3 - Verification record
+Date: 2026-10-29
+Environment: Windows, Python 3.12.14
+
+AUTOMATED TESTS
+Command: python -B -m unittest -v test_analyzer.py
+Result: Ran 29 tests in 0.022s - OK (all passed)
+
+Coverage:
+- IPv4 version, header length, total length, TTL, protocol, checksum and addresses
+- TCP ports, sequence, acknowledgment, header size, flags, window and checksum
+- UDP ports, length, checksum and payload size
+- Number, timestamp and IPv4 packet size
+- IP/TCP options and correct payload offsets
+- Empty TCP/UDP payloads and binary-safe hex/ASCII display
+- All five filters individually and combined; port zero
+- CLI selection, interactive selection, filter/reset and input errors
+- Truncated/malformed headers, declared lengths and trailing padding
+- First and later IP fragments; non-TCP/UDP protocols
+- Ethernet and single/double VLAN header removal
+- Windows/Linux socket behavior using mocks
+- Timeout, permission error, setup failure, cleanup and Ctrl+C retention
+- Synthetic demo packet checksums
+
+COMMAND-LINE SMOKE CHECKS
+- Windows run.bat --demo: passed
+- Windows run.bat --list-interfaces: passed; reported a local IPv4 candidate
+- Demo with UDP + destination-port filter: passed; packets 3 and 7 displayed
+- Packet 1 details: passed; TCP fields and HELLO SERVER payload displayed
+- Packet 6 details: passed; 24-byte IP/TCP headers and empty payload displayed
+- Piped interactive session: passed; packet 3, filter, packet 5, reset, quit
+
+REAL CAPTURE ATTEMPT
+Command: python -B mini_packet_analyzer.py --interface 192.168.1.35 --timeout 1 --no-interactive
+Result: exited with status 1 and a clear Administrator/root permission message.
+The session did not have Administrator privileges.
+
+LIMITS OF THIS VERIFICATION
+No real packets were captured in this session. Windows and Linux capture control
+flow passed simulated-socket tests; elevated live adapter capture remains to be
+verified using README.md. Offline success is not presented as live-capture proof.
