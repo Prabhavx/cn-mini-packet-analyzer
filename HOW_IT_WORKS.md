@@ -186,26 +186,4 @@ Only packets meeting all three conditions appear. The packet list is kept intact
 so `reset` can show everything again and packet numbers do not change.
 Typing `3` looks up packet number 3 and prints the stored headers and payload.
 
-## 8. Why validate lengths and fragments?
 
-We check minimum lengths before unpacking fields, and check declared header sizes
-before slicing payloads. Bad/truncated data produces a note instead of a crash.
-
-IP can split a transport message into fragments. Only the first fragment begins
-with its TCP/UDP header. A later fragment's data must not be mistaken for ports
-or sequence numbers. We show its offset and undecoded bytes; full reassembly is
-outside this assignment's implementation.
-
-## 9. Explain the design in a viva
-
-- **Why no packet-decoding library?** Understanding byte layouts is the objective;
-  our own code extracts the fields using offsets, masks and `struct.unpack`.
-- **How do you identify TCP versus UDP?** Read the IPv4 Protocol field: 6 or 17.
-- **Why multiply IHL/data offset by four?** Their unit is a 32-bit word.
-- **Why are headers not always 20 bytes?** IP/TCP options can make them longer.
-- **What is a payload?** The bytes after that protocol's header, within its length.
-- **What does a checksum field show?** The integer carried in the header; extracting
-  it is different from recalculating and validating it.
-- **Why administrator access?** The OS restricts raw socket capture.
-- **How did you test without admin?** Hand-written raw-byte fixtures, synthetic
-  demo packets and mocked capture sockets. Live adapter verification is separate.
