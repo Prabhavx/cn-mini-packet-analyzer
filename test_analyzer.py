@@ -147,6 +147,13 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(packet.transport["payload_length"], 1)
         self.assertTrue(packet.notes)
 
+    def test_zero_total_length_from_segmentation_offload(self):
+        packet = parse_packet(changed(TCP_BYTES, 2, b"\x00\x00"))
+        self.assertEqual(packet.ip["total_length"], 0)
+        self.assertEqual(packet.size, 45)
+        self.assertEqual(packet.payload, b"HELLO")
+        self.assertTrue(any("offload" in note for note in packet.notes))
+
     def test_later_fragment_is_not_decoded_as_tcp(self):
         packet = parse_packet(changed(TCP_BYTES, 6, b"\x00\x01"))
         self.assertEqual(packet.ip["fragment_offset"], 8)
@@ -263,6 +270,18 @@ class CaptureTests(unittest.TestCase):
         self.assertIsNone(ethernet_to_ipv4(b"short"))
         self.assertIsNone(ethernet_to_ipv4(macs + b"\x81\x00\x00"))
 
+    def test_linux_loopback_packet_is_kept_once(self):
+        frame = b"\x00" * 12 + b"\x08\x00" + UDP_BYTES
+        fake = Mock()
+        fake.recvfrom.side_effect = [(frame, ("lo", 0x0800, 4, 772, b"")),
+                                     (frame, ("lo", 0x0800, 0, 772, b""))]
+        with patch("packet_capture.sys.platform", "linux"), \
+                patch("packet_capture.socket.AF_PACKET", 17, create=True), \
+                patch("packet_capture.socket.socket", return_value=fake):
+            packets = list(capture_ipv4("lo", 1, 1))
+        self.assertEqual(len(packets), 1)
+        self.assertEqual(fake.recvfrom.call_count, 2)
+
     def test_windows_capture_and_cleanup(self):
         fake = Mock()
         fake.recvfrom.return_value = (TCP_BYTES, ("192.168.1.10", 0))
@@ -281,8 +300,8 @@ class CaptureTests(unittest.TestCase):
     def test_linux_capture_skips_other_ether_types(self):
         fake = Mock()
         fake.recvfrom.side_effect = [
-            (b"\x00" * 12 + b"\x08\x06" + b"ARP", ()),
-            (b"\x00" * 12 + b"\x08\x00" + UDP_BYTES, ()),
+            (b"\x00" * 12 + b"\x08\x06" + b"ARP", ("eth0", 0x0806, 0, 1, b"")),
+            (b"\x00" * 12 + b"\x08\x00" + UDP_BYTES, ("eth0", 0x0800, 0, 1, b"")),
         ]
         with patch("packet_capture.sys.platform", "linux"), \
                 patch("packet_capture.socket.AF_PACKET", 17, create=True), \

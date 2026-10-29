@@ -46,7 +46,7 @@ def parse_ipv4_header(raw):
     # ! = network byte order; B = 1 byte; H = 2 bytes; 4s = 4 raw bytes.
     fields = struct.unpack("!BBHHHBBH4s4s", raw[:20])
     total_length = fields[2]
-    if total_length < header_length:
+    if total_length and total_length < header_length:
         raise ValueError("IPv4 total length is smaller than its header.")
     flags_and_offset = fields[4]
     return {
@@ -118,9 +118,14 @@ def parse_packet(raw, number=1, timestamp=None):
         return packet
 
     ip = packet.ip
+    # Outgoing packets can show Total Length 0 when the NIC does segmentation.
+    total_length = ip["total_length"]
+    if total_length == 0:
+        total_length = len(raw)
+        packet.notes.append("Total Length is 0 (segmentation offload); using captured length.")
     # Ignore Ethernet padding or extra bytes after the declared IPv4 datagram.
-    packet.raw = raw[:ip["total_length"]]
-    if len(raw) < ip["total_length"]:
+    packet.raw = raw[:total_length]
+    if len(raw) < total_length:
         packet.notes.append("Truncated IPv4 packet: some bytes were not captured.")
     segment = packet.raw[ip["header_length"]:]
 

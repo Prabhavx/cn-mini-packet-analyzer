@@ -11,13 +11,12 @@ Start with the demo, then read `HOW_IT_WORKS.md`, then try live capture.
 Open PowerShell in this folder:
 
 ```powershell
-cd D:\College_Courses\CN
+cd path\to\cn-mini-packet-analyzer
 .\run.bat --demo
 ```
 
-The launcher finds Python on this machine, including the bundled Codex Python if
-there is no normal Python installation. On any system with Python 3.9 or newer,
-the equivalent command is:
+The launcher uses the `py` launcher or `python` from PATH. On any system with
+Python 3.9 or newer, the equivalent command is:
 
 ```text
 python mini_packet_analyzer.py --demo
@@ -57,7 +56,7 @@ current summary; `help` explains all commands.
 2. Change to this folder and list your local IPv4 address candidates:
 
 ```powershell
-cd D:\College_Courses\CN
+cd path\to\cn-mini-packet-analyzer
 .\run.bat --list-interfaces
 ipconfig
 ```
@@ -158,15 +157,9 @@ With a normal Python installation:
 python -m unittest -v test_analyzer.py
 ```
 
-If only the bundled runtime is available on this machine:
-
-```powershell
-& "$env:USERPROFILE\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe" -m unittest -v test_analyzer.py
-```
-
 Tests cover known header values, each filter, combined filters, packet selection,
 empty/binary payloads, header options, truncation, malformed input, fragmentation,
-Ethernet/VLAN removal, capture timeout, permission errors and socket cleanup.
+Ethernet/VLAN removal, loopback de-duplication, capture timeout, permission errors and socket cleanup.
 Simulated socket tests do not establish that a particular real adapter works.
 
 ## 7. Scope and troubleshooting
@@ -180,7 +173,8 @@ Simulated socket tests do not establish that a particular real adapter works.
   contain non-text bytes. This program does not decrypt application data.
 - **Packet size:** the summary consistently reports captured IPv4 bytes, without
   Ethernet headers or padding. IP Total Length is also shown; a truncated packet
-  can have fewer captured bytes than its declared total length.
+  can have fewer captured bytes than its declared total length. A Total Length
+  of 0 (segmentation offload on outgoing packets) falls back to the captured size.
 - **Fragments:** the first fragment is decoded if its transport header is complete;
   later fragments are labeled and shown as undecoded bytes. No reassembly is done.
 - **Checksums:** fields are extracted and displayed, not validated during capture.
@@ -188,7 +182,7 @@ Simulated socket tests do not establish that a particular real adapter works.
 - **Timestamps:** local timezone, recorded when Python receives each packet.
 - **Capture coverage:** one Windows adapter per run; operating-system and driver
   behavior determine which packets reach the socket. Linux may show duplicates
-  on loopback or when capturing across multiple interfaces.
+  when capturing across multiple interfaces (no `--interface`).
 
 ## Assignment coverage
 
@@ -205,9 +199,9 @@ Simulated socket tests do not establish that a particular real adapter works.
 | Detailed headers and payload | `print_details` with hex and ASCII |
 | Correct empty payload behavior | `(empty)` and payload length 0 |
 
-The implementation was tested offline on Windows. A real capture attempt in the
-development session correctly reported missing administrator privileges; an
-elevated real-network capture still needs to be verified with the steps above.
+The implementation was tested offline on Windows and with real root captures on
+Linux (`lo` and `eth0`). An elevated Windows capture still needs to be verified
+with the steps above.
 
 References for the capture API:
 
