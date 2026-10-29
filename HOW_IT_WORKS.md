@@ -96,6 +96,8 @@ An address stored as `C0 A8 01 0A` becomes `192.168.1.10` using `inet_ntoa`.
 
 The transport segment starts at `raw[header_length]` and ends at IP Total Length.
 Anything after Total Length is excluded, which avoids including Ethernet padding.
+A Total Length of 0 can appear on outgoing packets when the network card does
+segmentation; the parser then uses the captured length and adds a note.
 
 ## 4. TCP header
 

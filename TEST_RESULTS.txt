@@ -5,6 +5,7 @@ Environment: Windows, Python 3.12.14
 AUTOMATED TESTS
 Command: python -B -m unittest -v test_analyzer.py
 Result: Ran 29 tests in 0.022s - OK (all passed)
+Later re-run on Linux, Python 3.13, after the corrections below: Ran 31 tests - OK
 
 Coverage:
 - IPv4 version, header length, total length, TTL, protocol, checksum and addresses
@@ -18,6 +19,8 @@ Coverage:
 - Truncated/malformed headers, declared lengths and trailing padding
 - First and later IP fragments; non-TCP/UDP protocols
 - Ethernet and single/double VLAN header removal
+- Linux loopback de-duplication
+- IPv4 Total Length 0 from segmentation offload
 - Windows/Linux socket behavior using mocks
 - Timeout, permission error, setup failure, cleanup and Ctrl+C retention
 - Synthetic demo packet checksums
@@ -35,7 +38,15 @@ Command: python -B mini_packet_analyzer.py --interface 192.168.1.35 --timeout 1 
 Result: exited with status 1 and a clear Administrator/root permission message.
 The session did not have Administrator privileges.
 
+LIVE CAPTURE ON LINUX (root, Python 3.13)
+Command: python3 mini_packet_analyzer.py --interface lo --timeout 3 --dst-port 9999 --packet 1 --no-interactive
+Traffic: one UDP datagram "PINGTEST" sent to 127.0.0.1:9999.
+Before the fix: the datagram was listed twice (loopback outgoing + incoming copy).
+After the fix: listed once; UDP header and PINGTEST payload displayed.
+Command: python3 mini_packet_analyzer.py --interface eth0 --timeout 4 --count 10 --protocol TCP --no-interactive
+Traffic: an HTTPS request. Result: outgoing and incoming TCP packets to port 443 captured.
+
 LIMITS OF THIS VERIFICATION
-No real packets were captured in this session. Windows and Linux capture control
-flow passed simulated-socket tests; elevated live adapter capture remains to be
-verified using README.md. Offline success is not presented as live-capture proof.
+Live capture was verified on Linux only. Windows capture control flow passed
+simulated-socket tests; an elevated Windows capture remains to be verified using
+README.md.

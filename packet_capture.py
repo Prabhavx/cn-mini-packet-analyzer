@@ -56,7 +56,7 @@ def capture_ipv4(interface, count, timeout):
             sniffer.bind((str(address), 0))
             sniffer.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
             # IP-level capture avoids enabling the NIC's promiscuous mode.
-            sniffer.ioctl(socket.SIO_RCVALL, socket.RCVALL_IPLEVEL)
+            sniffer.ioctl(socket.SIO_RCVALL, getattr(socket, "RCVALL_IPLEVEL", 3))
             receive_all = True
         elif sys.platform.startswith("linux"):
             # ETH_P_ALL includes incoming AND outgoing frames. We keep IPv4 only.
@@ -74,8 +74,11 @@ def capture_ipv4(interface, count, timeout):
                 break
             sniffer.settimeout(min(0.5, remaining))
             try:
-                frame, _ = sniffer.recvfrom(65535 + 256)
+                frame, address = sniffer.recvfrom(65535 + 256)
             except socket.timeout:
+                continue
+            # Linux sees loopback packets twice (outgoing + incoming); keep one copy.
+            if sys.platform != "win32" and address[0] == "lo" and address[2] == 4:
                 continue
             timestamp = datetime.now().astimezone()
             raw = frame if sys.platform == "win32" else ethernet_to_ipv4(frame)
