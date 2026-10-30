@@ -8,6 +8,11 @@
 \usepackage{xcolor}
 \usepackage{listings}
 \usepackage{enumitem}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{caption}
+\graphicspath{{images/}}
+\captionsetup{font=small, labelfont=bf}
 \usepackage[hidelinks]{hyperref}
 
 \lstset{
@@ -217,70 +222,158 @@ rows; packets keep their original numbers, and \texttt{reset} shows everything
 again. Typing a packet number at the \texttt{analyzer>} prompt (or passing
 \texttt{--packet N}) prints the detailed view.
 
-\section{Sample Output}
+\section{Results}
 
-Summary with a UDP + destination-port filter applied:
+The analyzer was run with root privileges in WSL (Ubuntu) on a Windows laptop.
+While it was capturing, \texttt{curl -4 https://example.com/} was run in a
+second terminal (Fig.~\ref{fig:a}) to generate traffic. The host's address
+inside WSL is \texttt{172.19.28.203}; \texttt{example.com} resolved to
+\texttt{172.66.147.243}. In total 29 packets were captured: one full HTTPS
+connection over TCP and a few NTP (UDP port 123) packets that the system sent
+on its own.
 
-\begin{lstlisting}
-$ python mini_packet_analyzer.py --demo --protocol UDP --dst-port 9999
-  No.  Time          Source IP     Destination IP  Protocol  Src port  Dst port  IP bytes
-    3  12:27:33.130  192.168.1.10  192.168.1.20    UDP          53000      9999        43
-    7  12:27:33.530  192.168.1.10  192.168.1.20    UDP          53001      9999        35
-Shown: 2 / Stored: 7.
-\end{lstlisting}
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{a.png}
+  \caption{Traffic generated during capture with \texttt{curl -4 https://example.com/}.}
+  \label{fig:a}
+\end{figure}
 
-Detailed view of a TCP packet:
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.8\textwidth]{b.png}
+  \caption{Summary of all 29 captured packets: number, timestamp, IPs,
+  protocol, ports and size. Both outgoing and incoming packets are present, and
+  TCP/UDP is detected automatically.}
+  \label{fig:b}
+\end{figure}
 
-\begin{lstlisting}
-Packet #1
-Time:                    2026-10-29 12:27:32.930+05:30
-Packet length:           52 IPv4 bytes (without Ethernet)
+\subsection{TCP connection, packet by packet}
 
-IP Header
-------------------------------------------------
-Version:                 4
-Header length:           20 bytes
-Total length:            52 bytes
-TTL:                     64
-Protocol:                TCP (6)
-Header checksum:         0xB283
-Source IP:               192.168.1.10
-Destination IP:          192.168.1.20
+Opening the first few packets shows the TCP three-way handshake and the start
+of TLS. The decoded values agree with each other, which is a good sign the
+parser reads the right offsets:
 
-TCP Header
-------------------------------------------------
-Source port:             49152
-Destination port:        8080
-Sequence number:         105482
-Acknowledgment number:   208713
-Header length:           20 bytes
-Flags:                   PSH, ACK (0x18)
-Window size:             65535
-Checksum:                0xB2C9
-Payload length:          12 bytes available
+\begin{itemize}
+  \item \textbf{SYN} (packet 1, Fig.~\ref{fig:f}): sequence
+  \texttt{4079680877}, ack \texttt{0}. The TCP header is 40 bytes because of
+  options; the first option \texttt{02 04 05 b4} is MSS = 1460.
+  \item \textbf{SYN-ACK} (packet 2, Fig.~\ref{fig:c}): ack =
+  \texttt{4079680878}, i.e.\ the client's sequence number + 1. TTL is 54 for
+  incoming packets versus 64 for our outgoing ones, so the server is about 10
+  hops away.
+  \item \textbf{PSH-ACK} (packet 4, Fig.~\ref{fig:d}): the first data packet.
+  Payload length is $569 - 20 - 32 = 517$ bytes. It begins with
+  \texttt{16 03 01}, a TLS handshake record (Client Hello), and the server name
+  \texttt{example.com} and ALPN strings \texttt{h2}, \texttt{http/1.1} are
+  readable in the ASCII column. The rest is encrypted or binary, as expected
+  for HTTPS.
+  \item \textbf{ACK} (packet 5, Fig.~\ref{fig:e}): the server acknowledges
+  \texttt{4079681395} $= 4079680878 + 517$, exactly the bytes sent in
+  packet 4. The payload is empty and shown as length 0.
+\end{itemize}
 
-Payload: hex bytes | printable ASCII
-------------------------------------------------
-0000  48 45 4C 4C 4F 20 53 45 52 56 45 52              |HELLO SERVER|
-\end{lstlisting}
+The small window values after the handshake (e.g.\ 63) are the raw 16-bit
+field; the real window is larger because of the window-scale option
+negotiated in the SYN.
 
-A SYN packet with IP and TCP options (demo packet 6) correctly reports 24-byte
-IP and TCP headers, shows the option bytes in hex, and prints an empty payload.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.62\textwidth]{f.png}
+  \caption{Packet 1: SYN with TCP options and an empty payload.}
+  \label{fig:f}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.75\textwidth]{c.png}
+  \caption{Packet 2: SYN-ACK from the server; full IP and TCP header.}
+  \label{fig:c}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[height=0.8\textheight]{d.png}
+  \caption{Packet 4: PSH-ACK carrying a 517-byte TLS Client Hello, shown as hex
+  and printable ASCII.}
+  \label{fig:d}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.62\textwidth]{e.png}
+  \caption{Packet 5: pure ACK; payload length 0 and \texttt{(empty)}.}
+  \label{fig:e}
+\end{figure}
+
+\subsection{Filtering}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.75\textwidth]{g.png}
+  \caption{\texttt{filter --protocol UDP}: only the four NTP packets remain.}
+  \label{fig:g}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.75\textwidth]{h.png}
+  \caption{\texttt{filter --protocol TCP --dst-port 443}: two conditions
+  combined with AND; only client-to-server packets are shown.}
+  \label{fig:h}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.75\textwidth]{i.png}
+  \caption{\texttt{filter --src-ip 172.66.147.243}: only packets sent by the
+  server. Packet numbers stay the same as in the full list.}
+  \label{fig:i}
+\end{figure}
+
+\subsection{Requirement coverage}
+
+\begin{center}
+\begin{tabularx}{\textwidth}{@{}Xl@{}}
+\toprule
+\textbf{Requirement} & \textbf{Figure} \\
+\midrule
+Capture sent and received packets; number, timestamp, size & \ref{fig:a}, \ref{fig:b} \\
+Summary: IPs, protocol, ports, length & \ref{fig:b} \\
+Select a packet; IP header fields & \ref{fig:f}, \ref{fig:c}, \ref{fig:d}, \ref{fig:e} \\
+TCP header (ports, seq, ack, header length, flags, window, checksum) & \ref{fig:f}, \ref{fig:c}, \ref{fig:d}, \ref{fig:e} \\
+Payload (hex and text) & \ref{fig:d} \\
+Empty payload shows zero & \ref{fig:e} (also \ref{fig:f}, \ref{fig:c}) \\
+Automatic TCP/UDP detection & \ref{fig:b}, \ref{fig:g} \\
+Filter by TCP/UDP & \ref{fig:g}, \ref{fig:h} \\
+Filter by IP & \ref{fig:i} \\
+Filter by port & \ref{fig:h} \\
+Tests pass & \ref{fig:j} \\
+\bottomrule
+\end{tabularx}
+\end{center}
 
 \section{Testing}
 
 \begin{itemize}
-  \item \textbf{Unit tests:} 31 tests (\texttt{python -m unittest
-  test\_analyzer.py}), all passing. They check every header field against
-  hand-built byte strings, all eight TCP flags, IP/TCP options, empty payloads,
-  each filter alone and combined, truncated/malformed input, fragments,
-  Ethernet/VLAN stripping and socket clean-up (using mocked sockets).
-  \item \textbf{Live capture (Linux, root):} a UDP datagram with the text
-  \texttt{PINGTEST} sent to \texttt{127.0.0.1:9999} was captured on
-  \texttt{lo} and decoded correctly. An HTTPS request captured on
-  \texttt{eth0} showed both outgoing and incoming TCP packets on port 443.
-  \item The demo packets have valid IP checksums, verified in the tests.
+  \item \textbf{Unit tests:} 31 tests (\texttt{python3 -m unittest -v
+  test\_analyzer.py}), all passing (Fig.~\ref{fig:j}). They check every header
+  field against hand-built byte strings, all eight TCP flags, IP/TCP options,
+  empty payloads, each filter alone and combined, truncated/malformed input,
+  fragments, Ethernet/VLAN stripping and socket clean-up (using mocked
+  sockets).
+  \item \textbf{Live capture:} the WSL capture in the Results section, where
+  the decoded sequence and acknowledgment numbers were cross-checked by hand.
+  \item \textbf{Demo mode:} the seven synthetic packets (with IP/TCP options,
+  binary data and empty payloads) decode as expected without root.
 \end{itemize}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{j.png}
+  \caption{All 31 unit tests passing.}
+  \label{fig:j}
+\end{figure}
 
 \section{Limitations}
 
@@ -290,6 +383,9 @@ IP and TCP headers, shows the option bytes in hex, and prints an empty payload.
   outgoing values unreliable anyway).
   \item IP fragments are not reassembled.
   \item Packets are kept in memory only; there is no pcap export.
+  \item Packets larger than the MTU (e.g.\ packet 6, 2948 bytes, in
+  Fig.~\ref{fig:b}) can appear because the kernel merges segments before
+  they reach the socket (receive offload). They are reported as captured.
   \item On Windows, one adapter is captured per run, and loopback traffic may
   not be visible.
 \end{itemize}
