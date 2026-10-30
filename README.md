@@ -208,3 +208,38 @@ References for the capture API:
 - [Python socket documentation and Windows sniffer example](https://docs.python.org/3/library/socket.html)
 - [Microsoft SIO_RCVALL and adapter capture behavior](https://learn.microsoft.com/en-us/windows/win32/winsock/sio-rcvall)
 - [Microsoft raw socket privileges](https://learn.microsoft.com/en-us/windows/win32/winsock/tcp-ip-raw-sockets-2)
+
+## Running in WSL (Windows Subsystem for Linux)
+
+WSL is Linux, so use `python3` instead of `run.bat`. Open the project folder
+(for example a project on drive F:):
+
+```bash
+cd /mnt/f/cn-mini-packet-analyzer
+python3 mini_packet_analyzer.py --demo
+python3 -m unittest -v test_analyzer.py
+```
+
+Live capture needs `sudo`. Start it in one terminal:
+
+```bash
+sudo python3 mini_packet_analyzer.py --interface eth0 --timeout 60
+```
+
+While it is capturing, generate traffic in a second WSL terminal:
+
+```bash
+curl -4 https://example.com/
+python3 -c "import socket; socket.socket(socket.AF_INET, socket.SOCK_DGRAM).sendto(b'HELLO UDP', ('8.8.8.8', 9999))"
+```
+
+The first command produces TCP packets to port 443, the second a single UDP
+packet. When capture finishes, use the `analyzer>` prompt as described above.
+
+Notes:
+
+- WSL captures only its own virtual network, not traffic from Windows apps such
+  as the browser. To capture the whole PC, use the Windows steps in section 2.
+- DNS lookups may not appear because WSL forwards them through Windows.
+- Timestamps are in UTC unless you set a timezone, for example
+  `sudo TZ=Asia/Kolkata python3 mini_packet_analyzer.py ...`.
