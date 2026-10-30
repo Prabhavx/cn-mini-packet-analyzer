@@ -134,7 +134,41 @@ when `--interface` is omitted. Its raw socket supplies Ethernet frames; the code
 removes Ethernet/VLAN headers before passing IPv4 bytes to the parser. This path
 expects Ethernet-style link headers, not raw Wi-Fi monitor-mode headers.
 
-## 5. Files and reading order
+## 5. Running in WSL (Windows Subsystem for Linux)
+
+WSL is Linux, so use `python3` instead of `run.bat`. Open the project folder
+(for example a project on drive F:):
+
+```bash
+cd /mnt/f/cn-mini-packet-analyzer
+python3 mini_packet_analyzer.py --demo
+python3 -m unittest -v test_analyzer.py
+```
+
+Live capture needs `sudo`. Start it in one terminal (`--count 0` removes the
+50-packet limit so capture runs for the full 60 seconds):
+
+```bash
+sudo python3 mini_packet_analyzer.py --interface eth0 --count 0 --timeout 60
+```
+
+While it is capturing, generate traffic in a second WSL terminal:
+
+```bash
+curl -4 https://example.com/
+python3 -c "import socket; socket.socket(socket.AF_INET, socket.SOCK_DGRAM).sendto(b'HELLO UDP', ('8.8.8.8', 9999))"
+```
+
+The first command produces TCP packets to port 443, the second a single UDP
+packet. When capture finishes, use the `analyzer>` prompt as described above.
+
+Notes:
+
+- WSL captures only its own virtual network, not traffic from Windows apps such
+  as the browser. To capture the whole PC, use the Windows steps in section 2.
+- DNS lookups may not appear because WSL forwards them through Windows.
+
+## 6. Files and reading order
 
 | File | Purpose |
 | --- | --- |
@@ -149,7 +183,7 @@ expects Ethernet-style link headers, not raw Wi-Fi monitor-mode headers.
 | `SAMPLE_OUTPUT.txt` | Actual output from the offline demo |
 | `TEST_RESULTS.txt` | Recorded test run and live-capture verification limits |
 
-## 6. Run the tests
+## 7. Run the tests
 
 With a normal Python installation:
 
@@ -162,7 +196,7 @@ empty/binary payloads, header options, truncation, malformed input, fragmentatio
 Ethernet/VLAN removal, loopback de-duplication, capture timeout, permission errors and socket cleanup.
 Simulated socket tests do not establish that a particular real adapter works.
 
-## 7. Scope and troubleshooting
+## 8. Scope and troubleshooting
 
 - **Access denied:** use an Administrator terminal on Windows or root/CAP_NET_RAW
   on Linux. The demo does not require either.
@@ -199,45 +233,13 @@ Simulated socket tests do not establish that a particular real adapter works.
 | Detailed headers and payload | `print_details` with hex and ASCII |
 | Correct empty payload behavior | `(empty)` and payload length 0 |
 
-The implementation was tested offline on Windows and with real root captures on
-Linux (`lo` and `eth0`). An elevated Windows capture still needs to be verified
-with the steps above.
+The implementation was tested offline on Windows, with real root captures on
+Linux (`lo` and `eth0`), and with a live capture in WSL (`sudo`, `eth0`) of an
+HTTPS request and NTP traffic. An elevated native Windows capture still needs to
+be verified with the steps above.
 
 References for the capture API:
 
 - [Python socket documentation and Windows sniffer example](https://docs.python.org/3/library/socket.html)
 - [Microsoft SIO_RCVALL and adapter capture behavior](https://learn.microsoft.com/en-us/windows/win32/winsock/sio-rcvall)
 - [Microsoft raw socket privileges](https://learn.microsoft.com/en-us/windows/win32/winsock/tcp-ip-raw-sockets-2)
-
-## Running in WSL (Windows Subsystem for Linux)
-
-WSL is Linux, so use `python3` instead of `run.bat`. Open the project folder
-(for example a project on drive F:):
-
-```bash
-cd /mnt/f/cn-mini-packet-analyzer
-python3 mini_packet_analyzer.py --demo
-python3 -m unittest -v test_analyzer.py
-```
-
-Live capture needs `sudo`. Start it in one terminal:
-
-```bash
-sudo python3 mini_packet_analyzer.py --interface eth0 --timeout 60
-```
-
-While it is capturing, generate traffic in a second WSL terminal:
-
-```bash
-curl -4 https://example.com/
-python3 -c "import socket; socket.socket(socket.AF_INET, socket.SOCK_DGRAM).sendto(b'HELLO UDP', ('8.8.8.8', 9999))"
-```
-
-The first command produces TCP packets to port 443, the second a single UDP
-packet. When capture finishes, use the `analyzer>` prompt as described above.
-
-Notes:
-
-- WSL captures only its own virtual network, not traffic from Windows apps such
-  as the browser. To capture the whole PC, use the Windows steps in section 2.
-- DNS lookups may not appear because WSL forwards them through Windows.
