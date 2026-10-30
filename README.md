@@ -241,5 +241,3 @@ Notes:
 - WSL captures only its own virtual network, not traffic from Windows apps such
   as the browser. To capture the whole PC, use the Windows steps in section 2.
 - DNS lookups may not appear because WSL forwards them through Windows.
-- Timestamps are in UTC unless you set a timezone, for example
-  `sudo TZ=Asia/Kolkata python3 mini_packet_analyzer.py ...`.
