@@ -232,14 +232,14 @@ were captured: one HTTPS connection over TCP and four NTP packets (UDP port
 \begin{figure}[H]
   \centering
   \includegraphics[width=\textwidth]{a.png}
-  \caption{Generating traffic during capture.}
+  \caption{Traffic generated during capture: \texttt{curl} fetches \texttt{https://example.com/} over IPv4.}
   \label{fig:a}
 \end{figure}
 
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.8\textwidth]{b.png}
-  \caption{Summary of all captured packets, sent and received.}
+  \caption{Summary after capture: each packet is numbered and timestamped, with source/destination IP, protocol (TCP or UDP, detected automatically), ports and size. Both sent and received packets appear.}
   \label{fig:b}
 \end{figure}
 
@@ -260,71 +260,51 @@ The decoded fields are consistent across the handshake:
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.62\textwidth]{f.png}
-  \caption{Packet 1: SYN.}
+  \caption{Packet 1 (SYN) selected: full IP header, TCP header with seq, ack = 0, 40-byte header due to options, and an empty payload.}
   \label{fig:f}
 \end{figure}
 
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.75\textwidth]{c.png}
-  \caption{Packet 2: SYN-ACK.}
+  \caption{Packet 2 (SYN-ACK) from the server: ack is the client's seq + 1. Payload length is 0.}
   \label{fig:c}
 \end{figure}
 
 \begin{figure}[H]
   \centering
   \includegraphics[height=0.8\textheight]{d.png}
-  \caption{Packet 4: PSH-ACK with payload in hex and ASCII.}
+  \caption{Packet 4 (PSH-ACK): first data packet. The 517-byte payload is a TLS Client Hello, shown as hex with readable text (\texttt{example.com}) on the right.}
   \label{fig:d}
 \end{figure}
 
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.62\textwidth]{e.png}
-  \caption{Packet 5: ACK with zero payload.}
+  \caption{Packet 5 (ACK): acknowledges the 517 bytes of packet 4. No data, so payload shows 0 bytes and \texttt{(empty)}.}
   \label{fig:e}
 \end{figure}
 
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.75\textwidth]{g.png}
-  \caption{\texttt{filter --protocol UDP}.}
+  \caption{Filter by protocol: \texttt{filter --protocol UDP} keeps only the four NTP packets (port 123).}
   \label{fig:g}
 \end{figure}
 
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.75\textwidth]{h.png}
-  \caption{\texttt{filter --protocol TCP --dst-port 443}.}
+  \caption{Filter by protocol and port: \texttt{--protocol TCP --dst-port 443} shows only packets sent to the HTTPS server. Conditions are combined with AND.}
   \label{fig:h}
 \end{figure}
 
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.75\textwidth]{i.png}
-  \caption{\texttt{filter --src-ip 172.66.147.243}.}
+  \caption{Filter by IP: \texttt{--src-ip 172.66.147.243} shows only packets sent by the server. Original packet numbers are kept.}
   \label{fig:i}
 \end{figure}
-
-\begin{center}
-\begin{tabularx}{\textwidth}{@{}Xl@{}}
-\toprule
-\textbf{Requirement} & \textbf{Figure} \\
-\midrule
-Capture sent and received packets; number, timestamp, size & \ref{fig:a}, \ref{fig:b} \\
-Summary: IPs, protocol, ports, length & \ref{fig:b} \\
-Select a packet; IP header fields & \ref{fig:f}, \ref{fig:c}, \ref{fig:d}, \ref{fig:e} \\
-TCP header (ports, seq, ack, header length, flags, window, checksum) & \ref{fig:f}, \ref{fig:c}, \ref{fig:d}, \ref{fig:e} \\
-Payload (hex and text) & \ref{fig:d} \\
-Empty payload shows zero & \ref{fig:e} (also \ref{fig:f}, \ref{fig:c}) \\
-Automatic TCP/UDP detection & \ref{fig:b}, \ref{fig:g} \\
-Filter by TCP/UDP & \ref{fig:g}, \ref{fig:h} \\
-Filter by IP & \ref{fig:i} \\
-Filter by port & \ref{fig:h} \\
-Tests pass & \ref{fig:j} \\
-\bottomrule
-\end{tabularx}
-\end{center}
 
 \section{Testing}
 
@@ -341,7 +321,7 @@ Tests pass & \ref{fig:j} \\
 \begin{figure}[H]
   \centering
   \includegraphics[width=\textwidth]{j.png}
-  \caption{All 31 unit tests passing.}
+  \caption{All 31 unit tests pass (header fields, flags, options, empty payloads, filters, malformed packets, capture handling).}
   \label{fig:j}
 \end{figure}
 
