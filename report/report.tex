@@ -1,0 +1,307 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=2.2cm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  columns=fullflexible,
+  keepspaces=true,
+  frame=single,
+  rulecolor=\color{gray!60},
+  backgroundcolor=\color{gray!6},
+  breaklines=true,
+  showstringspaces=false,
+  xleftmargin=2pt,
+  xrightmargin=2pt
+}
+\lstdefinestyle{py}{
+  language=Python,
+  keywordstyle=\color{blue!60!black}\bfseries,
+  commentstyle=\color{green!40!black}\itshape,
+  stringstyle=\color{red!50!black}
+}
+
+\setlist{itemsep=2pt, topsep=4pt}
+\setlength{\parskip}{4pt}
+\setlength{\parindent}{0pt}
+
+\title{\textbf{Programming Assignment 3: Mini Packet Analyzer}\\[2pt]
+\large Computer Networks}
+\author{Name: \underline{\hspace{5cm}} \quad Roll No.: \underline{\hspace{3cm}}}
+\date{}
+
+\begin{document}
+\maketitle
+\vspace{-1.5em}
+
+\section{Overview}
+
+The goal of this assignment was to build a small, command-line version of
+Wireshark in Python. The tool captures IPv4 packets sent or received by the
+host, numbers and timestamps them, and decodes the IPv4, TCP and UDP headers.
+Captured packets can be listed, filtered and opened one at a time to see the
+full header breakdown and the payload.
+
+Only the Python standard library is used (\texttt{socket}, \texttt{struct},
+\texttt{ipaddress}, \texttt{datetime}, \texttt{argparse}). Sockets are used
+just to get the raw bytes; every header field is pulled out of those bytes by
+our own code. No Scapy, PyShark or similar decoding library is involved.
+
+\section{Program Structure}
+
+The code is split into small modules so that capturing, parsing and printing
+stay independent of each other.
+
+\begin{center}
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\toprule
+\textbf{File} & \textbf{Responsibility} \\
+\midrule
+\texttt{packet\_capture.py} & Opens a raw socket (Windows/Linux) and yields raw IPv4 bytes with a timestamp. \\
+\texttt{packet\_parser.py} & Manual parsing of IPv4, TCP and UDP headers; the core of the assignment. \\
+\texttt{packet\_display.py} & Summary table, filters, detailed view and hex/ASCII payload dump. \\
+\texttt{mini\_packet\_analyzer.py} & Command-line options and the interactive \texttt{analyzer>} prompt. \\
+\texttt{demo\_packets.py} & Builds seven hand-made packets so the tool can be shown without admin rights. \\
+\texttt{test\_analyzer.py} & 31 unit tests. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+The flow is simple: \emph{capture} $\rightarrow$ \emph{parse} $\rightarrow$
+\emph{store as a numbered Packet} $\rightarrow$ \emph{filter summary}
+$\rightarrow$ \emph{select a packet and show details}.
+
+\section{Packet Capture}
+
+\begin{itemize}
+  \item \textbf{Linux:} an \texttt{AF\_PACKET} raw socket with
+  \texttt{ETH\_P\_ALL} receives both incoming and outgoing frames. These are
+  Ethernet frames, so the 14-byte Ethernet header (and any 802.1Q VLAN tags)
+  is stripped first, and only frames with EtherType \texttt{0x0800} (IPv4) are
+  kept. On the loopback interface Linux delivers every packet twice, so the
+  outgoing copy is dropped.
+  \item \textbf{Windows:} an \texttt{AF\_INET} raw socket is bound to the
+  adapter's IPv4 address and switched to receive-all mode with
+  \texttt{SIO\_RCVALL}. Windows already hands over IP packets, so nothing has
+  to be stripped. Receive-all mode is turned off again when capture ends.
+\end{itemize}
+
+Capture stops after \texttt{--count} packets, after \texttt{--timeout}
+seconds, or on Ctrl+C (the packets collected so far are kept). Each packet gets
+a sequential number and a timestamp taken the moment it is received. The size
+shown is the number of IPv4 bytes (Ethernet header excluded). Root/CAP\_NET\_RAW
+on Linux or Administrator on Windows is needed; without it the program prints a
+clear error. A \texttt{--demo} mode feeds synthetic packets through the exact
+same parser for testing without privileges.
+
+\section{Header Parsing}
+
+All multi-byte fields are big-endian (network byte order).
+\texttt{struct.unpack} with the \texttt{!} prefix is used to turn fixed-size
+slices into integers; it is only a byte converter and knows nothing about
+protocols, so the offsets, sizes and bit masks are all chosen by us.
+
+\subsection{IPv4}
+
+\begin{center}
+\begin{tabular}{@{}cll@{}}
+\toprule
+\textbf{Bytes} & \textbf{Field} & \textbf{How it is extracted} \\
+\midrule
+0      & Version, IHL        & \texttt{raw[0] >> 4}, \;\texttt{(raw[0] \& 0x0F) * 4} \\
+2--3   & Total length        & 16-bit unsigned (\texttt{H}) \\
+4--5   & Identification      & \texttt{H} \\
+6--7   & Flags, frag. offset & DF \texttt{\& 0x4000}, MF \texttt{\& 0x2000}, offset \texttt{\& 0x1FFF} \\
+8      & TTL                 & 1 byte (\texttt{B}) \\
+9      & Protocol            & \texttt{B}; 6 = TCP, 17 = UDP \\
+10--11 & Header checksum     & \texttt{H} \\
+12--15 & Source IP           & 4 bytes, \texttt{socket.inet\_ntoa} \\
+16--19 & Destination IP      & 4 bytes, \texttt{socket.inet\_ntoa} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The IHL is a count of 32-bit words, which is why it is multiplied by 4. This
+matters because the IP header can carry options; the transport header starts at
+\texttt{raw[header\_length:]}, not blindly at byte 20.
+
+\begin{lstlisting}[style=py]
+version       = raw[0] >> 4
+header_length = (raw[0] & 0x0F) * 4
+fields = struct.unpack("!BBHHHBBH4s4s", raw[:20])
+ttl, protocol, checksum = fields[5], fields[6], fields[7]
+source = socket.inet_ntoa(fields[8])
+\end{lstlisting}
+
+The protocol byte is what lets the program decide automatically whether the
+packet carries TCP or UDP. Anything else (e.g.\ ICMP) is shown with its IP
+header only.
+
+\subsection{TCP}
+
+\begin{center}
+\begin{tabular}{@{}cll@{}}
+\toprule
+\textbf{Bytes} & \textbf{Field} & \textbf{How it is extracted} \\
+\midrule
+0--1   & Source port         & \texttt{H} \\
+2--3   & Destination port    & \texttt{H} \\
+4--7   & Sequence number     & 32-bit unsigned (\texttt{I}) \\
+8--11  & Acknowledgment no.  & \texttt{I} \\
+12     & Data offset         & \texttt{(byte >> 4) * 4} \\
+13     & Flags               & bit 0 FIN, 1 SYN, 2 RST, 3 PSH, 4 ACK, 5 URG, 6 ECE, 7 CWR \\
+14--15 & Window size         & \texttt{H} \\
+16--17 & Checksum            & \texttt{H} \\
+18--19 & Urgent pointer      & \texttt{H} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{lstlisting}[style=py]
+fields = struct.unpack("!HHIIBBHHH", segment[:20])
+header_length = (fields[4] >> 4) * 4
+names = ["FIN","SYN","RST","PSH","ACK","URG","ECE","CWR"]
+flags = [n for bit, n in enumerate(names) if fields[5] & (1 << bit)]
+payload_length = len(segment) - header_length
+\end{lstlisting}
+
+\subsection{UDP}
+
+UDP has a fixed 8-byte header: source port, destination port, length and
+checksum, each 2 bytes (\texttt{"!HHHH"}). The length field covers header plus
+data, so the payload is \texttt{segment[8:length]}, and its size is
+\texttt{length - 8}.
+
+\subsection{Payload and edge cases}
+
+The payload is whatever follows the transport header, up to the IP total
+length. A few cases needed extra care:
+
+\begin{itemize}
+  \item \textbf{Empty payload:} a pure ACK or SYN shows \texttt{Payload length:
+  0} and \texttt{(empty)} rather than trying to decode non-existent data.
+  \item \textbf{Ethernet padding:} small frames are padded to 60 bytes; anything
+  past the IP total length is cut off so it isn't mistaken for data.
+  \item \textbf{Total length = 0:} outgoing packets can show this because of
+  segmentation offload on the NIC; the captured length is used instead.
+  \item \textbf{Fragments and malformed packets:} later IP fragments are not
+  parsed as TCP/UDP (they start mid-segment). Truncated or invalid headers are
+  kept in the list with a note instead of crashing the program.
+\end{itemize}
+
+The payload is printed as a hex dump with a printable-ASCII column, like
+Wireshark. Non-printable bytes appear as \texttt{.}, so binary or encrypted
+data can't mess up the terminal.
+
+\section{Summary, Filtering and Selection}
+
+After capture, a summary table lists the packet number, time, source and
+destination IP, protocol, source and destination port, and length. Filters can
+be given on the command line or typed at the interactive prompt:
+
+\begin{lstlisting}
+--protocol TCP|UDP   --src-ip A.B.C.D   --dst-ip A.B.C.D
+--src-port N         --dst-port N
+\end{lstlisting}
+
+When several filters are given they are combined with AND. Filtering only hides
+rows; packets keep their original numbers, and \texttt{reset} shows everything
+again. Typing a packet number at the \texttt{analyzer>} prompt (or passing
+\texttt{--packet N}) prints the detailed view.
+
+\section{Sample Output}
+
+Summary with a UDP + destination-port filter applied:
+
+\begin{lstlisting}
+$ python mini_packet_analyzer.py --demo --protocol UDP --dst-port 9999
+  No.  Time          Source IP     Destination IP  Protocol  Src port  Dst port  IP bytes
+    3  12:27:33.130  192.168.1.10  192.168.1.20    UDP          53000      9999        43
+    7  12:27:33.530  192.168.1.10  192.168.1.20    UDP          53001      9999        35
+Shown: 2 / Stored: 7.
+\end{lstlisting}
+
+Detailed view of a TCP packet:
+
+\begin{lstlisting}
+Packet #1
+Time:                    2026-10-29 12:27:32.930+05:30
+Packet length:           52 IPv4 bytes (without Ethernet)
+
+IP Header
+------------------------------------------------
+Version:                 4
+Header length:           20 bytes
+Total length:            52 bytes
+TTL:                     64
+Protocol:                TCP (6)
+Header checksum:         0xB283
+Source IP:               192.168.1.10
+Destination IP:          192.168.1.20
+
+TCP Header
+------------------------------------------------
+Source port:             49152
+Destination port:        8080
+Sequence number:         105482
+Acknowledgment number:   208713
+Header length:           20 bytes
+Flags:                   PSH, ACK (0x18)
+Window size:             65535
+Checksum:                0xB2C9
+Payload length:          12 bytes available
+
+Payload: hex bytes | printable ASCII
+------------------------------------------------
+0000  48 45 4C 4C 4F 20 53 45 52 56 45 52              |HELLO SERVER|
+\end{lstlisting}
+
+A SYN packet with IP and TCP options (demo packet 6) correctly reports 24-byte
+IP and TCP headers, shows the option bytes in hex, and prints an empty payload.
+
+\section{Testing}
+
+\begin{itemize}
+  \item \textbf{Unit tests:} 31 tests (\texttt{python -m unittest
+  test\_analyzer.py}), all passing. They check every header field against
+  hand-built byte strings, all eight TCP flags, IP/TCP options, empty payloads,
+  each filter alone and combined, truncated/malformed input, fragments,
+  Ethernet/VLAN stripping and socket clean-up (using mocked sockets).
+  \item \textbf{Live capture (Linux, root):} a UDP datagram with the text
+  \texttt{PINGTEST} sent to \texttt{127.0.0.1:9999} was captured on
+  \texttt{lo} and decoded correctly. An HTTPS request captured on
+  \texttt{eth0} showed both outgoing and incoming TCP packets on port 443.
+  \item The demo packets have valid IP checksums, verified in the tests.
+\end{itemize}
+
+\section{Limitations}
+
+\begin{itemize}
+  \item Only IPv4 is decoded; IPv6 and ARP frames are skipped.
+  \item Checksums are displayed but not verified (checksum offload makes
+  outgoing values unreliable anyway).
+  \item IP fragments are not reassembled.
+  \item Packets are kept in memory only; there is no pcap export.
+  \item On Windows, one adapter is captured per run, and loopback traffic may
+  not be visible.
+\end{itemize}
+
+\section{Conclusion}
+
+Writing the parser by hand made it clear how a packet is just a sequence of
+bytes whose meaning comes entirely from fixed offsets defined by the protocol.
+Small details, such as the header length being in 4-byte words, flags packed
+into single bits, and the need to respect the IP total length, turned out to be
+exactly where a naive parser goes wrong. The finished tool covers capture,
+per-field decoding of IPv4/TCP/UDP, filtering and per-packet inspection as
+required.
+
+\end{document}
